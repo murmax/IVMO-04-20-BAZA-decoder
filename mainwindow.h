@@ -1,4 +1,4 @@
-#ifndef MAINWINDOW_H
+﻿#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -42,14 +42,28 @@ public:
 
     QSqlDatabase dbase;
     bool syncWithDB();
+    int rowsAppliedCorrect=0;
+    int rowsAppliedIncorrect=0;
+
     //~SQL
 
+    QStringList parseRow(QString row, QSqlQuery query);
 private slots:
     void on_btn_browse_clicked();
 
     void on_btn_check_clicked();
 
+    void on_btn_parse_clicked();
+
 private:
     Ui::MainWindow *ui;
+    QStringList parseRowTypeFirst(QString row, QSqlQuery query);
+    QStringList parseRowTypeSecond(QString row, QSqlQuery query);
+
+    int selectUnique(QString tableName, QString paramName,QString value, QSqlQuery query, QMap<QString,QString> additionalParams = QMap<QString,QString>());
+
+    QStringList firstLineHeader;
+    QStringList secondLineHeader;
+    int findClosestInHeader(bool firstHeader, QString value,int defaultValue=-1, int startAt=0, int endAt=-1);
 };
 #endif // MAINWINDOW_H
