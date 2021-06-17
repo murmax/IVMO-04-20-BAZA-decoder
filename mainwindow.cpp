@@ -1,6 +1,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include <QtCharts>
 
+using namespace QtCharts;
 
 
 QMap<QString,QString> MainWindow::iniParams;
@@ -15,6 +17,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     QDir::setCurrent(QCoreApplication::applicationDirPath());
     loadParamsFromIni();
+    on_cb_type_currentIndexChanged(ui->cb_type->currentIndex());
 
     if (iniParams.value("UsePostgreSQL")=="1")
     {
@@ -39,6 +42,9 @@ MainWindow::MainWindow(QWidget *parent)
     {
         ui->te_dbError->append("БД подключена корректно\n");
     }
+
+
+    //ui->verticalLayout_4->insertWidget(ui->verticalLayout_4->count(),series)
 
 
 }
@@ -651,6 +657,183 @@ QStringList MainWindow::parseRow(QString row, QSqlQuery query)
         return parseRowTypeSecond(row,query);
     }
     return QStringList();
+}
+
+void MainWindow::on_cb_type_currentIndexChanged(int index)
+{
+    if (index==0)
+    {
+        ui->cb_param->clear();
+        ui->cb_param->addItems(QStringList({"Наименование организации","Вид обязательств","Наименование кредитора","Целевое предназначение кредита","Валюта кредита"}));
+
+        ui->cb_value->clear();
+        ui->cb_value->addItems(QStringList({"Объем обязательств"}));
+    } else
+    {
+        ui->cb_param->clear();
+        ui->cb_param->addItems(QStringList({"d","e","f"}));
+
+
+        ui->cb_value->clear();
+        ui->cb_value->addItems(QStringList({"d","e","f"}));
+    }
+}
+
+void MainWindow::on_btn_update_clicked()
+{
+    {
+        QWidget* wdgToDel=this->chart;
+        if (wdgToDel!=nullptr)
+        {
+            this->chart=nullptr;
+            delete wdgToDel;
+        }
+    }
+
+
+    QString sqlQuery;
+
+
+    QString aggreg; //="COUNT"
+    switch (ui->cb_aggreg->currentIndex()) {
+    case 0:
+        aggreg = "SUM";
+        break;
+    case 1:
+        aggreg = "MAX";
+        break;
+    case 2:
+        aggreg = "MIN";
+        break;
+    case 3:
+        aggreg = "AVG";
+        break;
+    case 4:
+        aggreg = "COUNT";
+        break;
+    default: aggreg = "COUNT";
+        break;
+    }
+    QString type; //="crvalue"
+    QString mainTable; //="cr_table"
+    QString joinedTable; //="bank_table"
+    QString groupBy; //="bank"
+    QString textName; //="bank"
+    switch (ui->cb_type->currentIndex()) {
+    case 0:
+        mainTable = "cr_table";
+        type = "crvalue";
+        if (ui->cb_param->currentIndex() == 0) groupBy = "company";
+        else if (ui->cb_param->currentIndex() == 1) groupBy = "crtype";
+        else if (ui->cb_param->currentIndex() == 2) groupBy = "bank";
+        else if (ui->cb_param->currentIndex() == 3) groupBy = "crtarget";
+        else if (ui->cb_param->currentIndex() == 4) groupBy = "cur";
+        break;
+    case 1:
+        mainTable = "cr_table";
+        type = "crvalue";
+        if (ui->cb_param->currentIndex() == 0) groupBy = "company";
+        else if (ui->cb_param->currentIndex() == 1) groupBy = "crtype";
+        else if (ui->cb_param->currentIndex() == 2) groupBy = "bank";
+        else if (ui->cb_param->currentIndex() == 3) groupBy = "crtarget";
+        else if (ui->cb_param->currentIndex() == 4) groupBy = "cur";
+        break;
+    default:
+        type = "crvalue";
+        groupBy = "company";
+        break;
+    }
+    textName = groupBy+"_name";
+    joinedTable=groupBy+"_table";
+    QString select = "SELECT "+joinedTable+"."+textName+" AS key"+", "+aggreg+"("+mainTable+"."+type+") AS value";
+    QString from = " FROM "+mainTable+" INNER JOIN "+joinedTable + " ON "+mainTable+"."+groupBy+" = "+joinedTable+".id ";
+    QString where;
+    switch (ui->cb_where->currentIndex()) {
+        case 0:
+            break;
+        case 1:
+            where = " WHERE "+type+" > "+ui->le_where->text();
+            break;
+        case 2:
+            where = " WHERE "+type+" < "+ui->le_where->text();
+            break;
+        case 3:
+            where = " WHERE "+type+" = "+ui->le_where->text();
+            break;
+        case 4:
+            where = " WHERE "+type+" > "+ui->le_where->text().split(',').value(0,"-999999") + " AND "+ type+" < "+ui->le_where->text().split(',').value(1,"999999");
+            break;
+        default:
+            where = "";
+            break;
+    }
+    sqlQuery = select + from + where + " GROUP BY "+joinedTable+"."+textName;
+
+
+    qDebug()<< " sqlQuery:"<<sqlQuery;
+
+
+    if (!dbase.open()) {
+        qDebug() << "Что-то пошло не так!"<<dbase.lastError().text();
+        ui->te_dbError->append("Произошла ошибка:"+dbase.lastError().text());
+        return;
+    }
+
+    QSqlQuery query(dbase);
+    auto b =  query.exec(sqlQuery);
+
+    if (b)
+    {
+        ui->te_dbError->append("График успешно обновлен");
+        QSqlRecord rec = query.record();
+        QBarSeries *series = new QBarSeries(this);
+        while (query.next())
+        {
+            QString key = query.value(rec.indexOf("key")).toString();
+            double value = query.value(rec.indexOf("value")).toDouble();
+            QBarSet * barSet = new QBarSet(key);
+            *barSet << value;
+            series->append(barSet);
+
+
+
+
+            //qDebug()<<"key:"<<key<<"value"<<value;
+
+        }
+        series->setLabelsVisible(true);
+        series->setLabelsPosition(QAbstractBarSeries::LabelsInsideEnd);
+        series->setLabelsPrecision(9);
+        QChart *chart = new QChart();
+        chart->addSeries(series);
+        chart->setTitle("График "+ui->cb_aggreg->currentText()+" "+ui->cb_value->currentText()+" по "+ui->cb_param->currentText());
+        chart->setAnimationOptions(QChart::AllAnimations);
+//        QStringList categories;
+//        categories << "Jan" << "Feb" << "Mar" << "Apr" << "May" << "Jun";
+//        QBarCategoryAxis *axisX = new QBarCategoryAxis();
+//        axisX->append(categories);
+//        chart->addAxis(axisX, Qt::AlignBottom);
+//        series->attachAxis(axisX);
+
+//        QValueAxis *axisY = new QValueAxis();
+//        axisY->setRange(0,15);
+//        chart->addAxis(axisY, Qt::AlignLeft);
+//        series->attachAxis(axisY);
+        chart->legend()->setVisible(true);
+        chart->legend()->setAlignment(Qt::AlignBottom);
+        QChartView *chartView = new QChartView(chart);
+        chartView->setRenderHint(QPainter::Antialiasing);
+        chartView->chart()->createDefaultAxes();
+        ui->verticalLayout_4->insertWidget(ui->verticalLayout_4->count(),chartView);
+        this->chart = chartView;
+        ui->verticalSpacer->changeSize(0,0,QSizePolicy::Fixed);
+
+    } else
+    {
+        ui->te_dbError->append("Произошла ошибка:"+dbase.lastError().text());
+    }
+
+    dbase.close();
 }
 
 

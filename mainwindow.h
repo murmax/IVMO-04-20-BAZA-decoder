@@ -55,6 +55,10 @@ private slots:
 
     void on_btn_parse_clicked();
 
+    void on_cb_type_currentIndexChanged(int index);
+
+    void on_btn_update_clicked();
+
 private:
     Ui::MainWindow *ui;
     QStringList parseRowTypeFirst(QString row, QSqlQuery query);
@@ -65,5 +69,6 @@ private:
     QStringList firstLineHeader;
     QStringList secondLineHeader;
     int findClosestInHeader(bool firstHeader, QString value,int defaultValue=-1, int startAt=0, int endAt=-1);
+    QWidget* chart=nullptr;
 };
 #endif // MAINWINDOW_H
