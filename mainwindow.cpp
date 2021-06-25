@@ -664,18 +664,18 @@ void MainWindow::on_cb_type_currentIndexChanged(int index)
     if (index==0)
     {
         ui->cb_param->clear();
-        ui->cb_param->addItems(QStringList({"Наименование организации","Вид обязательств","Наименование кредитора","Целевое предназначение кредита","Валюта кредита"}));
+        ui->cb_param->addItems(QStringList({"Наименование ИС","Вид обязательств","Наименование кредитора","Целевое предназначение кредита","Валюта кредита"}));
 
         ui->cb_value->clear();
         ui->cb_value->addItems(QStringList({"Объем обязательств"}));
     } else
     {
         ui->cb_param->clear();
-        ui->cb_param->addItems(QStringList({"d","e","f"}));
+        ui->cb_param->addItems(QStringList({"Наименование ИС","Год"}));
 
 
         ui->cb_value->clear();
-        ui->cb_value->addItems(QStringList({"d","e","f"}));
+        ui->cb_value->addItems(QStringList({"Чистая прибыль (убыток)","Выручка"}));
     }
 }
 
@@ -692,6 +692,7 @@ void MainWindow::on_btn_update_clicked()
 
 
     QString sqlQuery;
+    bool simple=true;
 
 
     QString aggreg; //="COUNT"
@@ -719,34 +720,50 @@ void MainWindow::on_btn_update_clicked()
     QString joinedTable; //="bank_table"
     QString groupBy; //="bank"
     QString textName; //="bank"
-    switch (ui->cb_type->currentIndex()) {
-    case 0:
+
+    QString addWhereRSBU="";
+    bool isRSBU = ui->cb_type->currentIndex()==1;
+    if (!isRSBU){
         mainTable = "cr_table";
         type = "crvalue";
-        if (ui->cb_param->currentIndex() == 0) groupBy = "company";
+        if (ui->cb_param->currentIndex() == 0){ groupBy = "is"; simple=false;}
         else if (ui->cb_param->currentIndex() == 1) groupBy = "crtype";
         else if (ui->cb_param->currentIndex() == 2) groupBy = "bank";
         else if (ui->cb_param->currentIndex() == 3) groupBy = "crtarget";
         else if (ui->cb_param->currentIndex() == 4) groupBy = "cur";
-        break;
-    case 1:
-        mainTable = "cr_table";
-        type = "crvalue";
-        if (ui->cb_param->currentIndex() == 0) groupBy = "company";
-        else if (ui->cb_param->currentIndex() == 1) groupBy = "crtype";
-        else if (ui->cb_param->currentIndex() == 2) groupBy = "bank";
-        else if (ui->cb_param->currentIndex() == 3) groupBy = "crtarget";
-        else if (ui->cb_param->currentIndex() == 4) groupBy = "cur";
-        break;
-    default:
-        type = "crvalue";
-        groupBy = "company";
-        break;
+    } else {
+        mainTable = "rsbu_table";
+        type = "rsbu_value";
+        if (ui->cb_value->currentIndex()==0) addWhereRSBU = "rsbu_table.rsbu_type = 'Чистая прибыль'";
+        else if (ui->cb_value->currentIndex()==1) addWhereRSBU = "rsbu_table.rsbu_type = 'Выручка'";
+
+        if (ui->cb_param->currentIndex() == 0) {groupBy = "is"; simple=false;}
+        else if (ui->cb_param->currentIndex() == 1) {groupBy = "rsbu_year"; simple=false;}
     }
     textName = groupBy+"_name";
     joinedTable=groupBy+"_table";
-    QString select = "SELECT "+joinedTable+"."+textName+" AS key"+", "+aggreg+"("+mainTable+"."+type+") AS value";
-    QString from = " FROM "+mainTable+" INNER JOIN "+joinedTable + " ON "+mainTable+"."+groupBy+" = "+joinedTable+".id ";
+    QString select ;
+    QString from ;
+    if (simple)
+    {
+       select = "SELECT "+joinedTable+"."+textName+" AS key"+", "+aggreg+"("+mainTable+"."+type+") AS value";
+       from = " FROM "+mainTable+" INNER JOIN "+joinedTable + " ON "+mainTable+"."+groupBy+" = "+joinedTable+".id ";
+    } else
+    {
+        if (groupBy=="is")
+        {
+            QString midgrouper = "company";
+            QString midTextName = midgrouper+"_name";
+            QString midJoinedTable = midgrouper+"_table";
+            select = "SELECT "+joinedTable+"."+textName+" AS key"+", "+aggreg+"("+mainTable+"."+type+") AS value";
+            from = " FROM "+mainTable+" INNER JOIN "+midJoinedTable + " ON "+mainTable+"."+midgrouper+" = "+midJoinedTable+".id "+" INNER JOIN "+joinedTable + " ON "+midJoinedTable+"."+groupBy+"_name = "+joinedTable+".id ";
+        }
+        else if (groupBy=="rsbu_year")
+        {
+            select = "SELECT "+mainTable+"."+groupBy+" AS key"+", "+aggreg+"("+mainTable+"."+type+") AS value";
+            from = " FROM "+mainTable;
+        }
+    }
     QString where;
     switch (ui->cb_where->currentIndex()) {
         case 0:
@@ -767,7 +784,21 @@ void MainWindow::on_btn_update_clicked()
             where = "";
             break;
     }
-    sqlQuery = select + from + where + " GROUP BY "+joinedTable+"."+textName;
+    if (where=="" && addWhereRSBU!="")
+    {
+        where = " WHERE "+addWhereRSBU;
+    } else if (where!="" && addWhereRSBU!="")
+    {
+        where += " AND "+addWhereRSBU;
+    }
+    QString groupByStr=" GROUP BY "+joinedTable+"."+textName;
+    if (!simple)
+    {
+        if (groupBy=="rsbu_year"){
+            groupByStr=" GROUP BY "+mainTable+"."+groupBy;
+        }
+    }
+    sqlQuery = select + from + where  + groupByStr;
 
 
     qDebug()<< " sqlQuery:"<<sqlQuery;
